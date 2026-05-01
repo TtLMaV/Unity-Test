@@ -1,4 +1,5 @@
 using System;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -15,7 +16,10 @@ public class CS_PlayerMove : MonoBehaviour
     [SerializeField] private float mouseSensitivity;
     [SerializeField] private Camera playerCamera;
     [SerializeField] private GameObject cameraPivotObject;
-    [SerializeField] private float maxCameraDistance;
+    [SerializeField] private float cameraMaxPitchAngle = 90f;
+    [SerializeField] private float minCameraDistance = 1f;
+    [SerializeField] private float maxCameraDistance = 5f;
+    [SerializeField] private float cameraXOffest = 0.5f;
     private Vector2 lookVelocity;
     private float cameraXRotation;
     private RaycastHit cameraRayHit;
@@ -24,6 +28,8 @@ public class CS_PlayerMove : MonoBehaviour
     void Start()
     {
         playerRigidbody = GetComponent<Rigidbody>();
+
+        Cursor.lockState = CursorLockMode.Locked;
     }
 
     // Do Movement Inputs
@@ -75,7 +81,7 @@ public class CS_PlayerMove : MonoBehaviour
 
         // Apply Player Rotation Pitch (Up / Down)
         cameraXRotation -= (lookVelocity.y * mouseSensitivity);
-        cameraXRotation = Mathf.Clamp(cameraXRotation, -90f, 90f);
+        cameraXRotation = Mathf.Clamp(cameraXRotation, -cameraMaxPitchAngle, cameraMaxPitchAngle);
         cameraPivotObject.transform.localRotation = Quaternion.Euler(cameraXRotation, 0, 0);
 
         // Send Warning if Missing Camera Object
@@ -87,15 +93,21 @@ public class CS_PlayerMove : MonoBehaviour
 
         // Move Camera Along Pivot Through Raycast
         bool cameraOccluded = Physics.Raycast(cameraPivotObject.transform.position, -cameraPivotObject.transform.forward, out cameraRayHit, maxCameraDistance, groundMask);
-        if(cameraOccluded)
+
+        if (cameraOccluded)
         {
-            //playerCamera.transform.localPosition = new Vector3(0, 0, -5f);
-            playerCamera.transform.position = cameraRayHit.point;
-            print("jeff");
+            //
+            float wallToLeftOrRight = (cameraRayHit.normal.x - cameraPivotObject.transform.forward.x) * cameraXOffest;
+
+            //
+            float DifFromNormal = 1 - Vector3.Dot(cameraRayHit.normal, cameraPivotObject.transform.forward);
+            float newCameraZDepth = Mathf.Clamp(DifFromNormal - cameraRayHit.distance, -maxCameraDistance, -minCameraDistance);
+            playerCamera.transform.localPosition = new Vector3(cameraXOffest - wallToLeftOrRight, 0f, newCameraZDepth);
         }
         else
         {
             //
+            playerCamera.transform.localPosition = new Vector3(cameraXOffest, 0f, -5f);
         }
     }
 }
