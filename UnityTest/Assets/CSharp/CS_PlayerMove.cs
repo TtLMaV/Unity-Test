@@ -1,5 +1,4 @@
 using System;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -52,6 +51,8 @@ public class CS_PlayerMove : MonoBehaviour
         DoPlayerMove();
 
         DoPlayerLook();
+
+        DoCameraArm();
     }
 
     void DoPlayerMove()
@@ -83,6 +84,12 @@ public class CS_PlayerMove : MonoBehaviour
         cameraXRotation -= (lookVelocity.y * mouseSensitivity);
         cameraXRotation = Mathf.Clamp(cameraXRotation, -cameraMaxPitchAngle, cameraMaxPitchAngle);
         cameraPivotObject.transform.localRotation = Quaternion.Euler(cameraXRotation, 0, 0);
+    }
+
+    void DoCameraArm()
+    {
+        // 
+        playerCamera.transform.localPosition = new Vector3(cameraXOffest, 0f, -maxCameraDistance);
 
         // Send Warning if Missing Camera Object
         if (playerCamera == null)
@@ -91,23 +98,18 @@ public class CS_PlayerMove : MonoBehaviour
             return;
         }
 
-        // Move Camera Along Pivot Through Raycast
+        // Move Camera Backwards Along Pivot Through Raycast
         bool cameraOccluded = Physics.Raycast(cameraPivotObject.transform.position, -cameraPivotObject.transform.forward, out cameraRayHit, maxCameraDistance, groundMask);
+        float newCameraZDepth = cameraOccluded ? Mathf.Clamp(-cameraRayHit.distance, -maxCameraDistance, -minCameraDistance) : -5;
+        //Debug.DrawRay(cameraPivotObject.transform.position, cameraPivotObject.transform.forward * newCameraZDepth, Color.red, 0.1f);
 
-        if (cameraOccluded)
-        {
-            //
-            float wallToLeftOrRight = (cameraRayHit.normal.x - cameraPivotObject.transform.forward.x) * cameraXOffest;
+        //
+        Vector3 cameraPositionWithDepth = cameraPivotObject.transform.position + (cameraPivotObject.transform.forward * newCameraZDepth) + (cameraPivotObject.transform.right * Mathf.Sign(cameraXOffest) * -0.1f);
+        bool handedSideOccluded = Physics.Raycast(cameraPositionWithDepth, cameraPivotObject.transform.right * cameraXOffest, out cameraRayHit, cameraXOffest, groundMask);
+        float newCameraZOffset = handedSideOccluded ? Mathf.Clamp(cameraRayHit.distance, -cameraXOffest, cameraXOffest) : cameraXOffest;
+        //Debug.DrawRay(cameraPositionWithDepth, cameraPivotObject.transform.right * newCameraZOffset, Color.red, 0.1f);
 
-            //
-            float DifFromNormal = 1 - Vector3.Dot(cameraRayHit.normal, cameraPivotObject.transform.forward);
-            float newCameraZDepth = Mathf.Clamp(DifFromNormal - cameraRayHit.distance, -maxCameraDistance, -minCameraDistance);
-            playerCamera.transform.localPosition = new Vector3(cameraXOffest - wallToLeftOrRight, 0f, newCameraZDepth);
-        }
-        else
-        {
-            //
-            playerCamera.transform.localPosition = new Vector3(cameraXOffest, 0f, -5f);
-        }
+        // Apply Final Positions
+        playerCamera.transform.localPosition = new Vector3(newCameraZOffset, 0f, newCameraZDepth);
     }
 }
