@@ -6,17 +6,26 @@ public class CS_PlayerMove : MonoBehaviour
 {
     // 
     [Header("Movement")]
-    [SerializeField] private float movementSpeed;
+    [SerializeField] private float movementSpeed = 5f;
     [SerializeField] private LayerMask groundMask;
+    [SerializeField] private GameObject playerVisuals;
     private Rigidbody playerRigidbody;
     private Vector2 movementVelocity;
+    private Vector3 lastWalkDirection;
+
+    //
+    [Header("Jumping")]
+    [SerializeField] private float jumpHeight = 5f;
+    [SerializeField] private GameObject jumpFromObject;
+    [SerializeField] private float jumpFromRadius = 5f;
+    private bool tryJumping;
+    private bool onGround;
 
     [Header("Camera")]
     [SerializeField] private float mouseSensitivity;
     [SerializeField] private Camera playerCamera;
-    [SerializeField] private GameObject cameraPivotObject;
+    [SerializeField] private GameObject cameraPivot;
     [SerializeField] private float cameraMaxPitchAngle = 90f;
-    [SerializeField] private float minCameraDistance = 1f;
     [SerializeField] private float maxCameraDistance = 5f;
     [SerializeField] private float cameraXOffest = 0.5f;
     private Vector2 lookVelocity;
@@ -41,14 +50,23 @@ public class CS_PlayerMove : MonoBehaviour
     // Do Look Inputs
     public void InputLook(InputAction.CallbackContext context)
     {
-        // Find and deliver Look Location, This is filtered into mouseLocation Variable later based on Device
+        // Find and deliver Look Delta
         lookVelocity = context.ReadValue<Vector2>();
+    }
+
+    // Do Look Inputs
+    public void InputJump(InputAction.CallbackContext context)
+    {
+        // Find and deliver Jump State
+        tryJumping = context.ReadValue<float>() > 0.2f;
     }
 
     // Update is called once per frame
     void Update()
     {
         DoPlayerMove();
+
+        DoPlayerJump();
 
         DoPlayerLook();
 
@@ -64,6 +82,22 @@ public class CS_PlayerMove : MonoBehaviour
 
         // Apply Move Inputs
         playerRigidbody.linearVelocity = moveInput3D;
+
+        // Send Warning if Missing Player Visuals Object
+        if (playerVisuals == null)
+        {
+            Debug.LogWarning("Missing Player Visuals Object");
+            return;
+        }
+
+        // Apply Player Walk Transform Forward Direction
+        lastWalkDirection = movementVelocity.magnitude >= 0.2f ? moveVeloBySpeed : lastWalkDirection;
+        playerVisuals.transform.forward = lastWalkDirection.magnitude > 0 ? lastWalkDirection : playerVisuals.transform.forward;
+    }
+
+    void DoPlayerJump()
+    {
+        print(tryJumping);
     }
 
     void DoPlayerLook()
@@ -74,7 +108,7 @@ public class CS_PlayerMove : MonoBehaviour
         playerRigidbody.rotation = Quaternion.Euler(playerRotation.x, newYRotation, playerRotation.z);
 
         // Send Warning if Missing Pivot Object
-        if (cameraPivotObject == null)
+        if (cameraPivot == null)
         {
             Debug.LogWarning("Missing Camera Pivot Object");
             return;
@@ -83,33 +117,41 @@ public class CS_PlayerMove : MonoBehaviour
         // Apply Player Rotation Pitch (Up / Down)
         cameraXRotation -= (lookVelocity.y * mouseSensitivity);
         cameraXRotation = Mathf.Clamp(cameraXRotation, -cameraMaxPitchAngle, cameraMaxPitchAngle);
-        cameraPivotObject.transform.localRotation = Quaternion.Euler(cameraXRotation, 0, 0);
+        cameraPivot.transform.localRotation = Quaternion.Euler(cameraXRotation, 0, 0);
     }
 
     void DoCameraArm()
     {
-        // 
-        playerCamera.transform.localPosition = new Vector3(cameraXOffest, 0f, -maxCameraDistance);
-
         // Send Warning if Missing Camera Object
         if (playerCamera == null)
         {
-            Debug.LogWarning("Missing Camera Object");
+            Debug.LogWarning("Missing Player Camera Object");
             return;
         }
 
-        // Move Camera Backwards Along Pivot Through Raycast
-        bool cameraOccluded = Physics.Raycast(cameraPivotObject.transform.position, -cameraPivotObject.transform.forward, out cameraRayHit, maxCameraDistance, groundMask);
-        float newCameraZDepth = cameraOccluded ? Mathf.Clamp(-cameraRayHit.distance, -maxCameraDistance, -minCameraDistance) : -5;
-        //Debug.DrawRay(cameraPivotObject.transform.position, cameraPivotObject.transform.forward * newCameraZDepth, Color.red, 0.1f);
+        // Set Deffault Position For Camera
+        playerCamera.transform.localPosition = new Vector3(cameraXOffest, 0f, -maxCameraDistance);
+
+        // Move Camera Backwards and Right Through Raycast
+        Vector3 BackwardsVector = (cameraPivot.transform.right * cameraXOffest) - (cameraPivot.transform.forward * maxCameraDistance);
+        bool cameraOccluded = Physics.Raycast(cameraPivot.transform.position, BackwardsVector, out cameraRayHit, maxCameraDistance, groundMask);
+        Vector3 newCameraPoint = cameraOccluded ? cameraRayHit.point : playerCamera.transform.position;
 
         //
-        Vector3 cameraPositionWithDepth = cameraPivotObject.transform.position + (cameraPivotObject.transform.forward * newCameraZDepth) + (cameraPivotObject.transform.right * Mathf.Sign(cameraXOffest) * -0.1f);
-        bool handedSideOccluded = Physics.Raycast(cameraPositionWithDepth, cameraPivotObject.transform.right * cameraXOffest, out cameraRayHit, cameraXOffest, groundMask);
-        float newCameraZOffset = handedSideOccluded ? Mathf.Clamp(cameraRayHit.distance, -cameraXOffest, cameraXOffest) : cameraXOffest;
-        //Debug.DrawRay(cameraPositionWithDepth, cameraPivotObject.transform.right * newCameraZOffset, Color.red, 0.1f);
+        float cameraCheckDistance = 0.5f;
+        Vector3 posForRightCheck = newCameraPoint + (cameraPivot.transform.right * -0.1f) + (cameraPivot.transform.forward * 0.2f);
+        bool rightHandOccluded = Physics.Raycast(posForRightCheck, cameraPivot.transform.right * cameraCheckDistance, out cameraRayHit, cameraCheckDistance, groundMask);
+        float rightHandDistance = rightHandOccluded ? Mathf.Clamp(cameraRayHit.distance + 0.1f, 0, cameraCheckDistance) : cameraCheckDistance;
+
+        // 
+        Vector3 posForLeftCheck = newCameraPoint + (cameraPivot.transform.right * 0.1f) + (cameraPivot.transform.forward * 0.2f);
+        bool leftHandOccluded = Physics.Raycast(posForLeftCheck, cameraPivot.transform.right * -cameraCheckDistance, out cameraRayHit, cameraCheckDistance, groundMask);
+        float leftHandDistance = leftHandOccluded ? Mathf.Clamp(cameraRayHit.distance + 0.1f, 0, cameraCheckDistance) : cameraCheckDistance;
+
+        //
+        float SidedMotion = rightHandDistance - leftHandDistance;
 
         // Apply Final Positions
-        playerCamera.transform.localPosition = new Vector3(newCameraZOffset, 0f, newCameraZDepth);
+        playerCamera.transform.position = newCameraPoint + (cameraPivot.transform.right * SidedMotion);
     }
 }
